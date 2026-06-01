@@ -899,19 +899,39 @@ function App() {
       <main className="auth-shell">
         <div className="auth-panel">
           <p className="eyebrow">Bolão da Galera</p>
-          <h1>{authMode === 'signin' ? 'Entrar na conta' : 'Criar conta'}</h1>
+          <h1>Acesse sua conta</h1>
           <p className="lede">
-            Use o Supabase Auth para entrar no app. Se o projeto estiver com confirmacao de email ativa, confirme primeiro.
+            Entre com seu email e senha para acessar o bolão. Se ainda não tiver conta, crie uma em segundos.
           </p>
 
           <div className="role-grid" style={{ marginBottom: '16px' }}>
-            <button type="button" className="role-card" onClick={() => setAuthMode('signin')}>
+            <button
+              type="button"
+              className="role-card"
+              onClick={() => setAuthMode('signin')}
+              aria-pressed={authMode === 'signin'}
+              style={
+                authMode === 'signin'
+                  ? { borderColor: 'var(--accent)', background: 'rgba(203, 255, 63, 0.14)' }
+                  : undefined
+              }
+            >
               <strong>Entrar</strong>
-              <span>Use seu email e senha ja cadastrados.</span>
+              <span>Já tenho conta e quero acessar.</span>
             </button>
-            <button type="button" className="role-card" onClick={() => setAuthMode('signup')}>
+            <button
+              type="button"
+              className="role-card"
+              onClick={() => setAuthMode('signup')}
+              aria-pressed={authMode === 'signup'}
+              style={
+                authMode === 'signup'
+                  ? { borderColor: 'var(--accent)', background: 'rgba(203, 255, 63, 0.14)' }
+                  : undefined
+              }
+            >
               <strong>Criar conta</strong>
-              <span>Crie um acesso novo no Supabase.</span>
+              <span>Quero me cadastrar agora.</span>
             </button>
           </div>
 
