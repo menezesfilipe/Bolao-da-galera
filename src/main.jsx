@@ -174,31 +174,8 @@ function loadData() {
   return emptyData();
 }
 
-function loadSession() {
-  try {
-    localStorage.removeItem(STORAGE_KEYS.session);
-  } catch {
-    // ignore storage access issues
-  }
-
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEYS.session);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
 function persistData(data) {
   localStorage.setItem(STORAGE_KEYS.data, JSON.stringify(data));
-}
-
-function persistSession(session) {
-  if (session) {
-    sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-  } else {
-    sessionStorage.removeItem(STORAGE_KEYS.session);
-  }
 }
 
 function uid(prefix) {
@@ -263,13 +240,21 @@ function buildMatchMap(matches) {
 
 function App() {
   const [data, setData] = useState(loadData);
-  const [session, setSession] = useState(loadSession);
+  const [session, setSession] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [authDraft, setAuthDraft] = useState({
-    name: session?.name ?? '',
-    email: session?.email ?? '',
+  const [authStage, setAuthStage] = useState('auth');
+  const [authMode, setAuthMode] = useState('signin');
+  const [authForm, setAuthForm] = useState({
+    email: '',
+    password: '',
   });
-  const [authStage, setAuthStage] = useState(session?.role ? 'app' : session ? 'role' : 'profile');
+  const [authDraft, setAuthDraft] = useState({
+    name: '',
+    role: 'player',
+  });
   const [forms, setForms] = useState(emptyForms);
   const [selectedBolaoId, setSelectedBolaoId] = useState('');
   const [previewBolao, setPreviewBolao] = useState(null);
@@ -367,12 +352,98 @@ function App() {
   }, [data]);
 
   useEffect(() => {
-    persistSession(session);
-  }, [session]);
+    if (!supabaseReady) {
+      setAuthLoading(false);
+      return undefined;
+    }
+
+    let alive = true;
+
+    supabase.auth
+      .getSession()
+      .then(({ data: authData }) => {
+        if (!alive) return;
+        setAuthUser(authData.session?.user ?? null);
+        setAuthLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAuthUser(null);
+        setAuthLoading(false);
+      });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, authSession) => {
+      setAuthUser(authSession?.user ?? null);
+      if (!authSession) {
+        setSession(null);
+        setAuthStage('auth');
+        setProfileLoading(false);
+        setSelectedBolaoId('');
+        setPreviewBolao(null);
+      }
+    });
+
+    return () => {
+      alive = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) {
+      setSession(null);
+      setAuthStage('auth');
+      setProfileLoading(false);
+      return;
+    }
+
+    async function loadProfile() {
+      setProfileLoading(true);
+      const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
+
+      if (error) {
+        setNotice(error.message);
+        setAuthStage('profile');
+        setSession({
+          id: authUser.id,
+          name: authUser.email ?? '',
+          email: authUser.email ?? '',
+          role: '',
+        });
+        setProfileLoading(false);
+        return;
+      }
+
+      if (!profile) {
+        setSession({
+          id: authUser.id,
+          name: authUser.email ?? '',
+          email: authUser.email ?? '',
+          role: '',
+        });
+        setAuthDraft({ name: '', role: 'player' });
+        setAuthStage('profile');
+        setProfileLoading(false);
+        return;
+      }
+
+      setSession({
+        id: authUser.id,
+        name: profile.full_name,
+        email: authUser.email ?? '',
+        role: profile.role,
+      });
+      setAuthDraft({ name: profile.full_name, role: profile.role });
+      setAuthStage('app');
+      setProfileLoading(false);
+    }
+
+    loadProfile();
+  }, [authUser]);
 
   const refreshFromSupabase = useCallback(
     async ({ silent = false } = {}) => {
-      if (!supabaseReady) return;
+      if (!supabaseReady || !authUser) return;
 
       const [boloesRes, participantsRes, matchesRes, predictionsRes] = await Promise.all([
         supabase.from('boloes').select('*').order('created_at', { ascending: false }),
@@ -401,7 +472,7 @@ function App() {
         setNotice('Dados sincronizados com o Supabase.');
       }
     },
-    [],
+    [authUser],
   );
 
   useEffect(() => {
@@ -436,7 +507,7 @@ function App() {
   }, [data.boloes, myBoloes, selectedBolaoId]);
 
   async function saveDataMutation(nextData, remoteAction) {
-    if (remoteAction && supabaseReady) {
+    if (remoteAction && supabaseReady && authUser) {
       const result = await remoteAction();
       if (result?.error) {
         setNotice(result.error.message ?? 'Nao consegui concluir a operacao no Supabase.');
@@ -448,42 +519,68 @@ function App() {
     return true;
   }
 
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!authForm.email.trim() || !authForm.password.trim()) return;
+
+    const email = authForm.email.trim().toLowerCase();
+    const password = authForm.password;
+
+    if (authMode === 'signup') {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setNotice(error.message);
+        return;
+      }
+
+      setNotice('Conta criada. Se o seu projeto exigir confirmacao de email, confirme antes de continuar.');
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setNotice('Login efetuado.');
+  }
+
   async function handleProfileSubmit(event) {
     event.preventDefault();
-    if (!authDraft.name.trim()) return;
+    if (!authUser || !authDraft.name.trim() || !authDraft.role) return;
 
-    const nextSession = {
-      id: session?.id ?? uid('user'),
-      name: authDraft.name.trim(),
-      email: authDraft.email.trim(),
-      role: '',
+    const profile = {
+      id: authUser.id,
+      full_name: authDraft.name.trim(),
+      role: authDraft.role,
+      updated_at: new Date().toISOString(),
     };
 
-    setSession(nextSession);
-    setAuthStage('role');
-    setNotice('Agora escolha se voce vai organizar ou jogar.');
-  }
+    const { error } = await supabase.from('profiles').upsert(profile).select().single();
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
 
-  async function chooseRole(role) {
-    const nextSession = {
-      ...(session ?? {
-        id: uid('user'),
-        name: authDraft.name.trim(),
-        email: authDraft.email.trim(),
-      }),
-      role,
-    };
-
-    setSession(nextSession);
+    setSession({
+      id: authUser.id,
+      name: profile.full_name,
+      email: authUser.email ?? '',
+      role: profile.role,
+    });
     setAuthStage('app');
-    setSelectedBolaoId('');
-    setNotice(role === 'organizer' ? 'Modo organizador ativado.' : 'Modo jogador ativado.');
+    setNotice('Perfil salvo.');
   }
 
-  function logout() {
+  async function logout() {
+    await supabase.auth.signOut();
     setSession(null);
-    setAuthStage('profile');
-    setAuthDraft({ name: '', email: '' });
+    setAuthUser(null);
+    setAuthStage('auth');
+    setProfileLoading(false);
+    setAuthForm({ email: '', password: '' });
+    setAuthDraft({ name: '', role: 'player' });
     setSelectedBolaoId('');
     setPreviewBolao(null);
     setNotice('Sessao encerrada.');
@@ -785,6 +882,92 @@ function App() {
     }
   }
 
+  if (authLoading || (authUser && profileLoading)) {
+    return (
+      <main className="auth-shell">
+        <div className="auth-panel">
+          <p className="eyebrow">Bolão da Galera</p>
+          <h1>Carregando acesso</h1>
+          <p className="lede">Estou verificando sua sessão e carregando seu perfil no Supabase.</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <main className="auth-shell">
+        <div className="auth-panel">
+          <p className="eyebrow">Bolão da Galera</p>
+          <h1>{authMode === 'signin' ? 'Entrar na conta' : 'Criar conta'}</h1>
+          <p className="lede">
+            Use o Supabase Auth para entrar no app. Se o projeto estiver com confirmacao de email ativa, confirme primeiro.
+          </p>
+
+          <div className="role-grid" style={{ marginBottom: '16px' }}>
+            <button type="button" className="role-card" onClick={() => setAuthMode('signin')}>
+              <strong>Entrar</strong>
+              <span>Use seu email e senha ja cadastrados.</span>
+            </button>
+            <button type="button" className="role-card" onClick={() => setAuthMode('signup')}>
+              <strong>Criar conta</strong>
+              <span>Crie um acesso novo no Supabase.</span>
+            </button>
+          </div>
+
+          <form className="stack" onSubmit={handleAuthSubmit}>
+            <Input
+              label="Email"
+              type="email"
+              value={authForm.email}
+              onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))}
+              placeholder="voce@email.com"
+            />
+            <Input
+              label="Senha"
+              type="password"
+              value={authForm.password}
+              onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
+              placeholder="********"
+            />
+            <Button type="submit" icon={<ArrowRight size={16} />}>
+              {authMode === 'signin' ? 'Entrar' : 'Criar conta'}
+            </Button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
+  if (authStage === 'profile') {
+    return (
+      <main className="auth-shell">
+        <div className="auth-panel">
+          <p className="eyebrow">Bolão da Galera</p>
+          <h1>Complete seu perfil</h1>
+          <p className="lede">Agora escolha seu nome e o papel dentro do bolão.</p>
+          <form className="stack" onSubmit={handleProfileSubmit}>
+            <Input
+              label="Nome"
+              value={authDraft.name}
+              onChange={(event) => setAuthDraft((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Seu nome"
+            />
+            <Select
+              label="Papel"
+              value={authDraft.role}
+              onChange={(event) => setAuthDraft((current) => ({ ...current, role: event.target.value }))}
+            >
+              <option value="player">Jogador</option>
+              <option value="organizer">Organizador</option>
+            </Select>
+            <Button type="submit" icon={<Check size={16} />}>Salvar perfil</Button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   if (session?.role === 'player' && !activeBolao) {
     return (
       <main className="auth-shell">
@@ -825,47 +1008,6 @@ function App() {
               </button>
             </div>
           ) : null}
-        </div>
-      </main>
-    );
-  }
-
-  if (authStage === 'profile') {
-    return (
-      <main className="auth-shell">
-        <div className="auth-panel">
-          <p className="eyebrow">Bolao da Galera</p>
-          <h1>Entre na roda do bolao</h1>
-          <p className="lede">Comece com nome e email para abrir seu acesso ao app.</p>
-          <form className="stack" onSubmit={handleProfileSubmit}>
-            <Input label="Nome" value={authDraft.name} onChange={(event) => setAuthDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Seu nome" />
-            <Input label="Email" type="email" value={authDraft.email} onChange={(event) => setAuthDraft((current) => ({ ...current, email: event.target.value }))} placeholder="voce@email.com" />
-            <Button type="submit" icon={<ArrowRight size={16} />}>Continuar</Button>
-          </form>
-        </div>
-      </main>
-    );
-  }
-
-  if (authStage === 'role') {
-    return (
-      <main className="auth-shell">
-        <div className="auth-panel">
-          <p className="eyebrow">Passo 2</p>
-          <h1>Escolha seu papel</h1>
-          <p className="lede">Organizadores criam e administram o bolao. Jogadores entram usando o codigo.</p>
-          <div className="role-grid">
-            <button type="button" className="role-card" onClick={() => chooseRole('organizer')}>
-              <Crown size={22} />
-              <strong>Organizador</strong>
-              <span>Cria o bolao, recebe pagamentos e fecha os resultados.</span>
-            </button>
-            <button type="button" className="role-card" onClick={() => chooseRole('player')}>
-              <Gamepad2 size={22} />
-              <strong>Jogador</strong>
-              <span>Entra com o codigo, acompanha o pagamento e envia seus palpites.</span>
-            </button>
-          </div>
         </div>
       </main>
     );
