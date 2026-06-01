@@ -258,12 +258,14 @@ function App() {
   const [forms, setForms] = useState(emptyForms);
   const [selectedBolaoId, setSelectedBolaoId] = useState('');
   const [previewBolao, setPreviewBolao] = useState(null);
+  const sessionRole = session?.role ?? '';
+  const sessionName = session?.name ?? '';
 
   const participantMap = useMemo(() => buildParticipantMap(data.participants), [data.participants]);
 
   const myBoloes = useMemo(() => {
-    if (!session?.id || !session?.role) return [];
-    if (session.role === 'organizer') {
+    if (!session?.id || !sessionRole) return [];
+    if (sessionRole === 'organizer') {
       return data.boloes.filter((bolao) => bolao.organizer_id === session.id);
     }
 
@@ -274,16 +276,16 @@ function App() {
   }, [data.boloes, data.participants, session]);
 
   const activeBolao = useMemo(() => {
-    if (session?.role === 'organizer') {
+    if (sessionRole === 'organizer') {
       return data.boloes.find((bolao) => bolao.id === selectedBolaoId) ?? myBoloes[0] ?? null;
     }
 
-    if (session?.role === 'player') {
+    if (sessionRole === 'player') {
       return myBoloes[0] ?? null;
     }
 
     return null;
-  }, [data.boloes, myBoloes, selectedBolaoId, session?.role]);
+  }, [data.boloes, myBoloes, selectedBolaoId, sessionRole]);
 
   const activeParticipant = useMemo(() => {
     if (!activeBolao || !session?.id) return null;
@@ -592,7 +594,7 @@ function App() {
 
   async function createBolao(event) {
     event.preventDefault();
-    if (!session?.id || session.role !== 'organizer') return;
+    if (!session?.id || sessionRole !== 'organizer') return;
     if (!forms.bolao.name.trim() || !forms.bolao.entry_fee || !forms.bolao.pix_key.trim()) return;
 
     const existingCodes = new Set(data.boloes.map((bolao) => bolao.invite_code));
@@ -601,7 +603,7 @@ function App() {
       name: forms.bolao.name.trim(),
       invite_code: generateInviteCode(existingCodes),
       organizer_id: session.id,
-      organizer_name: session.name,
+      organizer_name: sessionName,
       entry_fee: Number(forms.bolao.entry_fee),
       pix_key: forms.bolao.pix_key.trim(),
       created_at: new Date().toISOString(),
@@ -611,7 +613,7 @@ function App() {
       id: uid('participant'),
       bolao_id: bolao.id,
       user_id: session.id,
-      name: session.name,
+      name: sessionName,
       email: session.email,
       role: 'organizer',
       payment_status: 'paid',
@@ -689,7 +691,7 @@ function App() {
   }
 
   async function joinBolao() {
-    if (!session?.id || session.role !== 'player' || !previewBolao) return;
+    if (!session?.id || sessionRole !== 'player' || !previewBolao) return;
 
     const existingParticipant = data.participants.find(
       (participant) => participant.bolao_id === previewBolao.id && participant.user_id === session.id,
@@ -705,7 +707,7 @@ function App() {
       id: uid('participant'),
       bolao_id: previewBolao.id,
       user_id: session.id,
-      name: session.name,
+      name: sessionName,
       email: session.email,
       role: 'player',
       payment_status: 'pending',
@@ -886,7 +888,7 @@ function App() {
     }
   }
 
-  if (authLoading || (authUser && profileLoading)) {
+  if (authLoading || profileLoading || (authUser && !session && authStage !== 'profile')) {
     return (
       <main className="auth-shell">
         <div className="auth-panel">
@@ -1007,7 +1009,7 @@ function App() {
     );
   }
 
-  if (session?.role === 'player' && !activeBolao) {
+  if (sessionRole === 'player' && !activeBolao) {
     return (
       <main className="auth-shell">
         <div className="auth-panel">
@@ -1066,7 +1068,7 @@ function App() {
             </div>
           </div>
           <div className="hero-actions">
-            <StatusPill icon={<ShieldCheck size={14} />} text={session.role === 'organizer' ? 'Modo organizador' : 'Modo jogador'} />
+            <StatusPill icon={<ShieldCheck size={14} />} text={sessionRole === 'organizer' ? 'Modo organizador' : 'Modo jogador'} />
             <StatusPill icon={<Users size={14} />} text={`${data.boloes.length} bolões`} />
             <button className="ghost-button" onClick={logout}>
               <LogOut size={14} />
@@ -1077,7 +1079,7 @@ function App() {
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <p className="hero-kicker">Bem-vindo, {session.name}</p>
+            <p className="hero-kicker">Bem-vindo, {sessionName}</p>
             <h2>Organize, convide, confirme pagamentos e acompanhe o placar de verdade.</h2>
             <p className="hero-text">
               O ranking só conta depois que o organizador finalizar a partida. Enquanto isso, os jogadores veem o valor da inscrição e a chave PIX do bolão.
@@ -1112,7 +1114,7 @@ function App() {
             </div>
           </Card>
 
-          {session.role === 'organizer' ? (
+          {sessionRole === 'organizer' ? (
             <Card title="Criar bolão" icon={<MessageSquarePlus size={18} />}>
               <form className="stack" onSubmit={createBolao}>
                 <Input
@@ -1175,7 +1177,7 @@ function App() {
             </Card>
           )}
 
-          {session.role === 'organizer' && activeBolao ? (
+          {sessionRole === 'organizer' && activeBolao ? (
             <Card title="Adicionar jogo" icon={<Gamepad2 size={18} />}>
               <form className="stack" onSubmit={createMatch}>
                 <Input
@@ -1239,7 +1241,7 @@ function App() {
             </Card>
           ) : null}
 
-          {session.role === 'organizer' ? (
+          {sessionRole === 'organizer' ? (
             <Card title="Seleções da Copa" icon={<Ticket size={18} />}>
               <div className="team-grid">
                 {worldCupTeams.map((team) => (
@@ -1271,7 +1273,7 @@ function App() {
                       <button type="button" className="secondary-button" onClick={copyInviteCode}>
                         Copiar código
                       </button>
-                      {session.role === 'organizer' ? (
+                      {sessionRole === 'organizer' ? (
                         <button type="button" className="danger-button" onClick={deleteBolao}>
                           Apagar bolão
                         </button>
@@ -1315,7 +1317,7 @@ function App() {
                 <MetricCard icon={<Medal size={16} />} label="Meus pontos" value={ranking.find((item) => item.user_id === session.id)?.total ?? 0} />
               </div>
 
-              {session.role === 'organizer' ? (
+              {sessionRole === 'organizer' ? (
                 <Card title="Pagamentos" icon={<DollarSign size={18} />}>
                   <div className="table-wrap">
                     <table>
@@ -1376,7 +1378,7 @@ function App() {
               )}
 
               <div className="split-grid">
-                {session.role === 'organizer' ? (
+                {sessionRole === 'organizer' ? (
                   <Card title="Jogos e resultados" icon={<Gamepad2 size={18} />}>
                     <div className="match-list">
                       {activeMatches.length === 0 ? (
