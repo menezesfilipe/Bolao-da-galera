@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowRight,
@@ -112,8 +112,18 @@ function normalizeData(raw) {
     return {
       boloes: raw.boloes ?? [],
       participants: raw.participants ?? [],
-      matches: [],
-      predictions: [],
+      matches: (raw.matches ?? []).map((match) => ({
+        ...match,
+        bolao_id: match.bolao_id ?? match.group_id ?? null,
+        status: match.status ?? 'scheduled',
+        home_score: match.home_score ?? null,
+        away_score: match.away_score ?? null,
+        finished_at: match.finished_at ?? null,
+      })),
+      predictions: (raw.predictions ?? []).map((prediction) => ({
+        ...prediction,
+        bolao_id: prediction.bolao_id ?? prediction.group_id ?? null,
+      })),
     };
   }
 
@@ -360,8 +370,8 @@ function App() {
     persistSession(session);
   }, [session]);
 
-  useEffect(() => {
-    async function hydrateFromSupabase() {
+  const refreshFromSupabase = useCallback(
+    async ({ silent = false } = {}) => {
       if (!supabaseReady) return;
 
       const [boloesRes, participantsRes, matchesRes, predictionsRes] = await Promise.all([
@@ -373,7 +383,9 @@ function App() {
 
       const errors = [boloesRes.error, participantsRes.error, matchesRes.error, predictionsRes.error].filter(Boolean);
       if (errors.length) {
-        setNotice('O Supabase ainda nao respondeu como esperado. Estou mantendo o cache local por enquanto.');
+        if (!silent) {
+          setNotice('O Supabase ainda nao respondeu como esperado. Estou mantendo o cache local por enquanto.');
+        }
         return;
       }
 
@@ -384,19 +396,39 @@ function App() {
         predictions: predictionsRes.data ?? [],
       });
 
-      if (
-        remoteData.boloes.length ||
-        remoteData.participants.length ||
-        remoteData.predictions.length ||
-        remoteData.matches.some((match) => match.status === 'finished')
-      ) {
-        setData(remoteData);
+      setData(remoteData);
+      if (!silent) {
         setNotice('Dados sincronizados com o Supabase.');
       }
-    }
+    },
+    [],
+  );
 
-    hydrateFromSupabase();
-  }, []);
+  useEffect(() => {
+    refreshFromSupabase();
+  }, [refreshFromSupabase]);
+
+  useEffect(() => {
+    if (!supabaseReady) return undefined;
+
+    const channel = supabase
+      .channel('bolao-galera-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'boloes' }, () => refreshFromSupabase({ silent: true }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, () =>
+        refreshFromSupabase({ silent: true }),
+      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () =>
+        refreshFromSupabase({ silent: true }),
+      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'predictions' }, () =>
+        refreshFromSupabase({ silent: true }),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshFromSupabase]);
 
   useEffect(() => {
     if (selectedBolaoId && data.boloes.some((bolao) => bolao.id === selectedBolaoId)) return;
