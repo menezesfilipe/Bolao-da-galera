@@ -895,20 +895,26 @@ function App() {
   }
 
   if (!authUser) {
+    const authCopy =
+      authMode === 'signin'
+        ? 'Entre com seu email e senha para acessar o bolão.'
+        : 'Crie uma conta para começar a usar o bolão.';
+
     return (
       <main className="auth-shell">
         <div className="auth-panel">
           <p className="eyebrow">Bolão da Galera</p>
           <h1>Acesse sua conta</h1>
-          <p className="lede">
-            Entre com seu email e senha para acessar o bolão. Se ainda não tiver conta, crie uma em segundos.
-          </p>
+          <p className="lede">{authCopy}</p>
 
           <div className="role-grid" style={{ marginBottom: '16px' }}>
             <button
               type="button"
               className="role-card"
-              onClick={() => setAuthMode('signin')}
+              onClick={() => {
+                setAuthMode('signin');
+                setNotice('Modo de login selecionado.');
+              }}
               aria-pressed={authMode === 'signin'}
               style={
                 authMode === 'signin'
@@ -922,7 +928,10 @@ function App() {
             <button
               type="button"
               className="role-card"
-              onClick={() => setAuthMode('signup')}
+              onClick={() => {
+                setAuthMode('signup');
+                setNotice('Modo de cadastro selecionado.');
+              }}
               aria-pressed={authMode === 'signup'}
               style={
                 authMode === 'signup'
