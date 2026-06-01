@@ -232,6 +232,12 @@ button {
   box-shadow: 0 10px 26px rgba(200, 255, 60, 0.3);
 }
 
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
 .danger-button {
   padding: 0 16px;
   color: #fff;

@@ -522,6 +522,10 @@ function App() {
   async function handleAuthSubmit(event) {
     event.preventDefault();
     if (!authForm.email.trim() || !authForm.password.trim()) return;
+    if (!supabaseReady || !supabase) {
+      setNotice('Login indisponivel: configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no deploy.');
+      return;
+    }
 
     const email = authForm.email.trim().toLowerCase();
     const password = authForm.password;
@@ -944,6 +948,12 @@ function App() {
             </button>
           </div>
 
+          {!supabaseReady ? (
+            <div className="notice-bar" style={{ marginBottom: '16px' }}>
+              O login está desativado porque o Supabase não foi configurado neste deploy.
+            </div>
+          ) : null}
+
           <form className="stack" onSubmit={handleAuthSubmit}>
             <Input
               label="Email"
@@ -959,7 +969,7 @@ function App() {
               onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
               placeholder="********"
             />
-            <Button type="submit" icon={<ArrowRight size={16} />}>
+            <Button type="submit" icon={<ArrowRight size={16} />} disabled={!supabaseReady}>
               {authMode === 'signin' ? 'Entrar' : 'Criar conta'}
             </Button>
           </form>
