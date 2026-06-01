@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   ClipboardList,
@@ -1027,6 +1028,13 @@ function App() {
             />
             <Button type="submit" icon={<ArrowRight size={16} />}>Buscar bolão</Button>
           </form>
+
+          <div style={{ marginTop: '12px' }}>
+            <button type="button" className="secondary-button" onClick={logout}>
+              <ArrowLeft size={16} />
+              Voltar
+            </button>
+          </div>
 
           {previewBolao ? (
             <div className="preview-card" style={{ marginTop: '16px' }}>
