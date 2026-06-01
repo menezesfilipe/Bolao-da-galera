@@ -1,8 +1,27 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+function normalizeSupabaseUrl(rawUrl) {
+  const value = rawUrl?.trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
 
-export const supabaseReady = Boolean(supabaseUrl && supabaseAnonKey);
+const supabaseUrl = normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL);
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
-export const supabase = supabaseReady ? createClient(supabaseUrl, supabaseAnonKey) : null;
+let supabase = null;
+let supabaseReady = false;
+
+try {
+  if (supabaseUrl && supabaseAnonKey) {
+    new URL(supabaseUrl);
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+    supabaseReady = true;
+  }
+} catch {
+  supabase = null;
+  supabaseReady = false;
+}
+
+export { supabase, supabaseReady };
