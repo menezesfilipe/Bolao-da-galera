@@ -179,8 +179,8 @@ function persistData(data) {
   localStorage.setItem(STORAGE_KEYS.data, JSON.stringify(data));
 }
 
-function uid(prefix) {
-  return `${prefix}-${crypto.randomUUID()}`;
+function uid() {
+  return crypto.randomUUID();
 }
 
 function formatCurrency(value) {
